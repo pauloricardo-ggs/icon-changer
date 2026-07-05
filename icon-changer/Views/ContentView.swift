@@ -6,8 +6,6 @@
 //
 
 import AppKit
-import CoreImage
-import CoreImage.CIFilterBuiltins
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -29,9 +27,13 @@ struct ContentView: View {
     private let iconRenderer = IconRenderer()
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(width: 320)
+                .background(Color(nsColor: .windowBackgroundColor))
+
+            Divider()
+
             detail
         }
         .frame(minWidth: 980, minHeight: 650)
@@ -45,14 +47,7 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Icon Changer")
-                    .font(.title2.weight(.semibold))
-                Text("Escolha um aplicativo, importe ícones ou gere uma versão escura a partir do ícone atual.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            appHeader
 
             Divider()
 
@@ -69,39 +64,13 @@ struct ContentView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    importLightIcon()
-                } label: {
-                    Label("Ícone claro", systemImage: "sun.max")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(selectedAppURL == nil)
-
-                Button {
-                    importDarkIcon()
-                } label: {
-                    Label("Ícone escuro", systemImage: "moon")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(selectedAppURL == nil)
-
-                Button {
-                    generateDarkIconFromSelectedApp()
-                } label: {
-                    Label("Gerar escuro do app", systemImage: "wand.and.sparkles")
-                        .frame(maxWidth: .infinity)
-                }
-                .disabled(selectedAppIcon == nil)
-            }
-            .buttonStyle(.bordered)
+            importActions
 
             Spacer()
 
-            statusView
+            StatusView(kind: statusKind, message: statusMessage)
         }
         .padding(22)
-        .navigationSplitViewColumnWidth(min: 280, ideal: 310, max: 360)
     }
 
     private var detail: some View {
@@ -114,6 +83,17 @@ struct ContentView: View {
             .padding(28)
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private var appHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Icon Changer")
+                .font(.title2.weight(.semibold))
+            Text("Escolha um aplicativo, importe ícones ou gere uma versão escura a partir do ícone atual.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var selectedApplicationSummary: some View {
@@ -135,6 +115,35 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var importActions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                importLightIcon()
+            } label: {
+                Label("Ícone claro", systemImage: "sun.max")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(selectedAppURL == nil)
+
+            Button {
+                importDarkIcon()
+            } label: {
+                Label("Ícone escuro", systemImage: "moon")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(selectedAppURL == nil)
+
+            Button {
+                generateDarkIconFromSelectedApp()
+            } label: {
+                Label("Gerar escuro do app", systemImage: "wand.and.sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(selectedAppIcon == nil)
+        }
+        .buttonStyle(.bordered)
     }
 
     private var previewSection: some View {
@@ -205,21 +214,6 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
         }
-    }
-
-    private var statusView: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: statusKind.symbolName)
-                .foregroundStyle(statusKind.color)
-            Text(statusMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func sliderRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, format: String) -> some View {
@@ -346,153 +340,6 @@ struct ContentView: View {
     private func status(_ kind: StatusKind, _ message: String) {
         statusKind = kind
         statusMessage = message
-    }
-}
-
-private struct IconPreview: View {
-    let title: String
-    let image: NSImage?
-    let fallbackSymbol: String
-
-    var body: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(18)
-                } else {
-                    Image(systemName: fallbackSymbol)
-                        .font(.system(size: 40))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .aspectRatio(1, contentMode: .fit)
-            .frame(maxWidth: 180)
-
-            Text(title)
-                .font(.callout.weight(.medium))
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private enum StatusKind {
-    case neutral
-    case success
-    case error
-
-    var symbolName: String {
-        switch self {
-        case .neutral:
-            "info.circle"
-        case .success:
-            "checkmark.circle.fill"
-        case .error:
-            "exclamationmark.triangle.fill"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .neutral:
-            .secondary
-        case .success:
-            .green
-        case .error:
-            .red
-        }
-    }
-}
-
-private final class IconRenderer {
-    private let context = CIContext(options: [.useSoftwareRenderer: false])
-    private let iconSize = CGSize(width: 1024, height: 1024)
-
-    func normalizedIcon(from image: NSImage) -> NSImage {
-        render(size: iconSize) { rect in
-            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
-        }
-    }
-
-    func darkVariant(
-        from image: NSImage,
-        background: NSColor,
-        brightness: Double,
-        contrast: Double,
-        saturation: Double,
-        scale: Double,
-        invertColors: Bool
-    ) -> NSImage {
-        let normalized = normalizedIcon(from: image)
-        let processed = process(
-            normalized,
-            brightness: brightness,
-            contrast: contrast,
-            saturation: saturation,
-            invertColors: invertColors
-        )
-
-        return render(size: iconSize) { rect in
-            background.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 210, yRadius: 210).fill()
-
-            let side = rect.width * scale
-            let iconRect = CGRect(
-                x: rect.midX - side / 2,
-                y: rect.midY - side / 2,
-                width: side,
-                height: side
-            )
-            processed.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1)
-        }
-    }
-
-    private func process(
-        _ image: NSImage,
-        brightness: Double,
-        contrast: Double,
-        saturation: Double,
-        invertColors: Bool
-    ) -> NSImage {
-        guard var ciImage = CIImage(data: image.tiffRepresentation ?? Data()) else {
-            return image
-        }
-
-        if invertColors {
-            let invertFilter = CIFilter.colorInvert()
-            invertFilter.inputImage = ciImage
-            if let outputImage = invertFilter.outputImage {
-                ciImage = outputImage
-            }
-        }
-
-        let controlsFilter = CIFilter.colorControls()
-        controlsFilter.inputImage = ciImage
-        controlsFilter.brightness = Float(brightness)
-        controlsFilter.contrast = Float(contrast)
-        controlsFilter.saturation = Float(saturation)
-
-        guard
-            let outputImage = controlsFilter.outputImage,
-            let cgImage = context.createCGImage(outputImage, from: outputImage.extent)
-        else {
-            return image
-        }
-
-        return NSImage(cgImage: cgImage, size: image.size)
-    }
-
-    private func render(size: CGSize, draw: (CGRect) -> Void) -> NSImage {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSGraphicsContext.current?.imageInterpolation = .high
-        draw(CGRect(origin: .zero, size: size))
-        image.unlockFocus()
-        return image
     }
 }
 
