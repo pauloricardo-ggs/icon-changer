@@ -48,6 +48,7 @@ jobs:
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="-" \
             DEVELOPMENT_TEAM="" \
+            ENABLE_APP_SANDBOX=NO \
             clean build
 
       - name: Package app
