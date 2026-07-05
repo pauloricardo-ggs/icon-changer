@@ -15,14 +15,16 @@ struct ContentView: View {
     @State private var lightIcon: NSImage?
     @State private var darkIcon: NSImage?
     @State private var generatedDarkIcon: NSImage?
+    @State private var usesBackground = false
     @State private var darkBackground = Color(red: 0.08, green: 0.09, blue: 0.11)
-    @State private var brightness = -0.08
-    @State private var contrast = 1.12
+    @State private var brightness = -0.42
+    @State private var contrast = 0.95
     @State private var saturation = 0.86
-    @State private var iconScale = 0.78
+    @State private var iconScale = 1.0
     @State private var invertColors = false
     @State private var statusMessage = "Selecione um app para começar."
     @State private var statusKind: StatusKind = .neutral
+    @State private var generationTask: Task<Void, Never>?
 
     private let iconRenderer = IconRenderer()
 
@@ -37,12 +39,13 @@ struct ContentView: View {
             detail
         }
         .frame(minWidth: 980, minHeight: 650)
-        .onChange(of: brightness) { _, _ in regenerateDarkIcon() }
-        .onChange(of: contrast) { _, _ in regenerateDarkIcon() }
-        .onChange(of: saturation) { _, _ in regenerateDarkIcon() }
-        .onChange(of: iconScale) { _, _ in regenerateDarkIcon() }
-        .onChange(of: invertColors) { _, _ in regenerateDarkIcon() }
-        .onChange(of: darkBackground) { _, _ in regenerateDarkIcon() }
+        .onChange(of: brightness) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: contrast) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: saturation) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: iconScale) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: invertColors) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: usesBackground) { _, _ in scheduleDarkIconRegeneration() }
+        .onChange(of: darkBackground) { _, _ in scheduleDarkIconRegeneration() }
     }
 
     private var sidebar: some View {
@@ -61,10 +64,6 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
 
             selectedApplicationSummary
-
-            Divider()
-
-            importActions
 
             Spacer()
 
@@ -117,35 +116,6 @@ struct ContentView: View {
         }
     }
 
-    private var importActions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                importLightIcon()
-            } label: {
-                Label("Ícone claro", systemImage: "sun.max")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(selectedAppURL == nil)
-
-            Button {
-                importDarkIcon()
-            } label: {
-                Label("Ícone escuro", systemImage: "moon")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(selectedAppURL == nil)
-
-            Button {
-                generateDarkIconFromSelectedApp()
-            } label: {
-                Label("Gerar escuro do app", systemImage: "wand.and.sparkles")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(selectedAppIcon == nil)
-        }
-        .buttonStyle(.bordered)
-    }
-
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Prévia")
@@ -153,26 +123,58 @@ struct ContentView: View {
 
             HStack(spacing: 16) {
                 IconPreview(title: "Atual", image: selectedAppIcon, fallbackSymbol: "app")
-                IconPreview(title: "Claro", image: lightIcon, fallbackSymbol: "sun.max")
-                IconPreview(title: "Escuro", image: darkIcon ?? generatedDarkIcon, fallbackSymbol: "moon")
+                IconPreview(
+                    title: "Claro",
+                    image: lightIcon,
+                    fallbackSymbol: "sun.max",
+                    importAction: importLightIcon,
+                    deleteAction: clearLightIcon
+                )
+                IconPreview(
+                    title: "Escuro",
+                    image: generatedDarkIcon ?? darkIcon,
+                    fallbackSymbol: "moon",
+                    importAction: importDarkIcon,
+                    deleteAction: clearDarkIcon
+                )
             }
         }
     }
 
     private var generatorSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Gerador do Tema Escuro")
+            Text("Ícone Escuro Gerado")
                 .font(.title3.weight(.semibold))
 
             VStack(spacing: 14) {
-                ColorPicker("Fundo", selection: $darkBackground, supportsOpacity: true)
+                Toggle("Usar fundo", isOn: $usesBackground)
 
-                sliderRow("Brilho", value: $brightness, range: -0.45...0.25, format: "%.2f")
-                sliderRow("Contraste", value: $contrast, range: 0.75...1.7, format: "%.2f")
-                sliderRow("Saturação", value: $saturation, range: 0...1.6, format: "%.2f")
-                sliderRow("Escala", value: $iconScale, range: 0.55...0.95, format: "%.2f")
+                ColorPicker("Fundo", selection: $darkBackground, supportsOpacity: true)
+                    .disabled(!usesBackground)
+
+                sliderRow("Brilho fundo", value: $brightness, range: -0.55...0.15, format: "%.2f")
+                sliderRow("Contraste fundo", value: $contrast, range: 0.75...1.7, format: "%.2f")
+                sliderRow("Saturação fundo", value: $saturation, range: 0...1.6, format: "%.2f")
+                sliderRow("Escala", value: $iconScale, range: 0.65...1.0, format: "%.2f")
 
                 Toggle("Inverter cores antes dos ajustes", isOn: $invertColors)
+
+                HStack(spacing: 12) {
+                    Button {
+                        resetDarkGeneratorAdjustments()
+                    } label: {
+                        Label("Resetar ajustes", systemImage: "arrow.counterclockwise")
+                    }
+
+                    Button {
+                        generateDarkIconFromSelectedApp()
+                    } label: {
+                        Label("Gerar ícone escuro", systemImage: "wand.and.sparkles")
+                    }
+                    .disabled(selectedAppIcon == nil)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .padding(16)
             .background(Color(nsColor: .controlBackgroundColor))
@@ -192,18 +194,11 @@ struct ContentView: View {
 
             HStack(spacing: 12) {
                 Button {
-                    apply(icon: lightIcon, label: "claro")
+                    applyCurrentIcon()
                 } label: {
-                    Label("Aplicar claro", systemImage: "sun.max.fill")
+                    Label("Aplicar", systemImage: "paintbrush.pointed.fill")
                 }
-                .disabled(selectedAppURL == nil || lightIcon == nil)
-
-                Button {
-                    apply(icon: darkIcon ?? generatedDarkIcon, label: "escuro")
-                } label: {
-                    Label("Aplicar escuro", systemImage: "moon.fill")
-                }
-                .disabled(selectedAppURL == nil || (darkIcon ?? generatedDarkIcon) == nil)
+                .disabled(selectedAppURL == nil || currentApplicableIcon == nil)
 
                 Button(role: .destructive) {
                     resetCustomIcon()
@@ -214,6 +209,18 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
         }
+    }
+
+    private var currentApplicableIcon: NSImage? {
+        if isSystemDarkMode {
+            generatedDarkIcon ?? darkIcon ?? lightIcon
+        } else {
+            lightIcon ?? generatedDarkIcon ?? darkIcon
+        }
+    }
+
+    private var isSystemDarkMode: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
     private func sliderRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, format: String) -> some View {
@@ -268,7 +275,43 @@ struct ContentView: View {
         status(.success, "Ícone escuro importado.")
     }
 
+    private func clearLightIcon() {
+        lightIcon = nil
+        status(.neutral, "Ícone claro removido.")
+    }
+
+    private func clearDarkIcon() {
+        darkIcon = nil
+        generatedDarkIcon = nil
+        status(.neutral, "Ícone escuro removido.")
+    }
+
+    private func resetDarkGeneratorAdjustments() {
+        usesBackground = false
+        darkBackground = Color(red: 0.08, green: 0.09, blue: 0.11)
+        brightness = -0.42
+        contrast = 0.95
+        saturation = 0.86
+        iconScale = 1.0
+        invertColors = false
+        regenerateDarkIcon()
+        status(.neutral, "Ajustes do ícone escuro resetados.")
+    }
+
+    private func scheduleDarkIconRegeneration() {
+        guard generatedDarkIcon != nil else { return }
+
+        generationTask?.cancel()
+        generationTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            regenerateDarkIcon()
+        }
+    }
+
     private func generateDarkIconFromSelectedApp() {
+        generationTask?.cancel()
+        darkIcon = nil
         regenerateDarkIcon()
         status(.success, "Ícone escuro gerado a partir do app selecionado.")
     }
@@ -277,7 +320,7 @@ struct ContentView: View {
         guard let selectedAppIcon else { return }
         generatedDarkIcon = iconRenderer.darkVariant(
             from: selectedAppIcon,
-            background: NSColor(darkBackground),
+            background: usesBackground ? NSColor(darkBackground) : nil,
             brightness: brightness,
             contrast: contrast,
             saturation: saturation,
@@ -286,8 +329,8 @@ struct ContentView: View {
         )
     }
 
-    private func apply(icon: NSImage?, label: String) {
-        guard let selectedAppURL, let icon else { return }
+    private func applyCurrentIcon() {
+        guard let selectedAppURL, let icon = currentApplicableIcon else { return }
 
         let didAccess = selectedAppURL.startAccessingSecurityScopedResource()
         defer {
@@ -299,7 +342,7 @@ struct ContentView: View {
         let path = selectedAppURL.path(percentEncoded: false)
         if NSWorkspace.shared.setIcon(icon, forFile: path, options: []) {
             selectedAppIcon = NSWorkspace.shared.icon(forFile: path)
-            status(.success, "Ícone \(label) aplicado. Talvez seja necessário reiniciar o Dock/Finder para ver a mudança.")
+            restartDockAfterApplyingIcon()
         } else {
             status(.error, "Não foi possível aplicar o ícone. Verifique se o app selecionado permite escrita pelo seu usuário.")
         }
@@ -340,6 +383,25 @@ struct ContentView: View {
     private func status(_ kind: StatusKind, _ message: String) {
         statusKind = kind
         statusMessage = message
+    }
+
+    private func restartDockAfterApplyingIcon() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        process.arguments = ["Dock"]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                status(.success, "Ícone aplicado e Dock reiniciado.")
+            } else {
+                status(.success, "Ícone aplicado, mas não foi possível reiniciar o Dock automaticamente.")
+            }
+        } catch {
+            status(.success, "Ícone aplicado, mas não foi possível reiniciar o Dock automaticamente.")
+        }
     }
 }
 
